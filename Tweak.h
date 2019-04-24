@@ -1,0 +1,77 @@
+#import <dlfcn.h>
+#import <objc/runtime.h>
+#import <notify.h>
+#import <substrate.h>
+#import <sys/stat.h>
+
+#define isDeviceIPad (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad)
+
+#define dataFoldeIcon "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A\x00\x00\x00\x0D\x49\x48\x44\x52\x00\x00\x00\x14\x00\x00\x00\x14\x08\x03\x00\x00\x00\xBA\x57\xED\x3F\x00\x00\x00\x78\x50\x4C\x54\x45\x00\x00\x00\x00\x00\x00\x63\x63\x63\x16\x16\x16\xEF\xEF\xEF\x23\x23\x23\xD8\xD8\xD8\x1E\x1E\x1E\x21\x21\x21\x14\x14\x14\xFB\xFB\xFB\xEC\xEC\xEC\x53\x53\x53\x2C\x2C\x2C\x26\x26\x26\x02\x02\x02\xF7\xF7\xF7\xDC\xDC\xDC\xCE\xCE\xCE\xB8\xB8\xB8\x7D\x7D\x7D\x79\x79\x79\x71\x71\x71\x65\x65\x65\x4D\x4D\x4D\x3A\x3A\x3A\xF4\xF4\xF4\xF2\xF2\xF2\xC8\xC8\xC8\xC4\xC4\xC4\xBE\xBE\xBE\xAC\xAC\xAC\xA8\xA8\xA8\xA2\xA2\xA2\x8C\x8C\x8C\x59\x59\x59\x50\x50\x50\x32\x32\x32\x10\x10\x10\x05\x05\x05\x2D\x7A\x9A\x35\x00\x00\x00\x01\x74\x52\x4E\x53\x00\x40\xE6\xD8\x66\x00\x00\x00\x7C\x49\x44\x41\x54\x18\xD3\x95\xC8\x37\x12\xC2\x30\x14\x40\xC1\x67\x49\x46\x92\x93\x9C\x03\x39\x73\xFF\x1B\xD2\x18\x66\xFC\x69\xF0\x96\xCB\x1A\xBB\x3E\xCB\xDA\x92\x05\x73\x2B\x94\xB2\xBD\xF9\x00\x18\x7C\x9C\x42\xA5\xBF\xC6\x12\xFC\x31\x21\x49\x48\x37\xB3\x5A\xEF\xC1\x9A\x93\xB3\xD6\xBA\x78\xE6\x5E\x7A\xC2\xA6\x59\x24\xC4\xB8\xEA\x21\xF3\x4E\x71\xF0\x32\x5B\xF2\x4B\x90\x79\x26\xEF\xE4\x85\x9A\x7C\x94\xA9\x0D\x85\x93\x39\x81\x0F\x32\x15\x3C\x23\xE9\x0A\xFA\x27\x1B\x68\x06\xB5\xD4\x6D\xF9\xDF\x1B\xB9\x3A\x06\x3B\x8D\xC3\xD8\xE8\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82"
+#define dataLenFoldeIcon 326
+
+@interface CKComposition : NSObject
+- (id)compositionByAppendingMediaObjects:(id)arg1;
+- (id)compositionByAppendingMediaObject:(id)arg1;
+@end
+
+@interface CKIMFileTransfer : NSObject
+- (id)initWithFileURL:(NSURL *)arg1 transcoderUserInfo:(NSDictionary *)arg2 attributionInfo:(NSDictionary *)arg3 hideAttachment:(BOOL)arg4;
+@end
+
+@interface CKMediaObject : NSObject
+- (id)initWithTransfer:(CKIMFileTransfer *)arg1;
+@end
+
+@interface CKMessageEntryView : UIView
+- (void)photoButtonTapped:(id)arg1;
+@end
+
+@interface CKChatController : UIViewController
+
+@property (nonatomic,retain) UIButton * buttonFileAdd;
+@property (nonatomic,retain) NSMutableArray * fileURLAttackArray;
+
+@property (nonatomic,retain) CKComposition * composition;
+-(CKMessageEntryView *)entryView;
+-(void)showKeyboard;
+-(void)showKeyboardForReply;
+@end
+
+
+@interface SBApplication : NSObject
+- (id)bundleIdentifier;
+- (id)displayName;
+@end
+
+@interface UIApplication ()
+- (UIDeviceOrientation)_frontMostAppOrientation;
+- (SBApplication*)_accessibilityFrontMostApplication;
+@end
+
+
+@interface UIActionSheet ()
+- (NSString *) context;
+- (void) setContext:(NSString *)context;
+@end
+
+@interface UITextField (Apple)
+- (UITextField *) textInputTraits;
+@end
+
+@interface UIAlertView (Apple)
+- (void) addTextFieldWithValue:(NSString *)value label:(NSString *)label;
+- (id) buttons;
+- (NSString *) context;
+- (void) setContext:(NSString *)context;
+- (void) setNumberOfRows:(int)rows;
+- (void) setRunsModal:(BOOL)modal;
+- (UITextField *) textField;
+- (UITextField *) textFieldAtIndex:(NSUInteger)index;
+- (void) _updateFrameForDisplay;
+@end
+
+@interface UIProgressHUD : UIView
+- (void) hide;
+- (void) setText:(NSString*)text;
+- (void) showInView:(UIView *)view;
+@end
