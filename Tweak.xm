@@ -7,16 +7,61 @@
 
 static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* filesURL)
 {
-	NSLog(@"filesURL: %@", filesURL);
-	if(chatCon.composition) {
-		NSMutableArray* retMut = [NSMutableArray array];
-		for(NSURL* fileNow in filesURL) {
-			CKIMFileTransfer* Trans = [[CKIMFileTransfer alloc] initWithFileURL:fileNow transcoderUserInfo:@{} attributionInfo:@{} hideAttachment:NO];
-			CKMediaObject* mediaOb = [[CKMediaObject alloc] initWithTransfer:Trans];
-			[retMut addObject:mediaOb];
+	try {
+		NSLog(@"filesURL: %@", filesURL);
+		if(chatCon.composition) {
+			NSMutableArray* retMut = [NSMutableArray array];
+			for(NSURL* fileNow in filesURL) {
+				
+				NSString* origFile = [fileNow path];
+				NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:[origFile lastPathComponent]];
+				@autoreleasepool {
+					NSData *data = [[NSFileManager defaultManager] contentsAtPath:origFile];
+					if(data) {
+						[data writeToFile:filePath atomically:YES];
+					}
+				}
+				if([[NSFileManager defaultManager] fileExistsAtPath:filePath isDirectory:nil]) {
+					fileNow = [NSURL fileURLWithPath:filePath];
+				}
+				
+				CKIMFileTransfer* Trans = [[CKIMFileTransfer alloc] initWithFileURL:fileNow transcoderUserInfo:@{} attributionInfo:@{} hideAttachment:NO];
+				CKMediaObject* mediaOb = nil;
+				if([[CKMediaObject new] respondsToSelector:@selector(initWithTransfer:isFromMe:suppressPreview:forceInlinePreview:)]) {
+					mediaOb = [[CKMediaObject alloc] initWithTransfer:Trans isFromMe:NO suppressPreview:NO forceInlinePreview:NO];
+				} else {
+					mediaOb = [[CKMediaObject alloc] initWithTransfer:Trans];
+				}
+				[retMut addObject:mediaOb];
+			}
+			chatCon.composition = [chatCon.composition compositionByAppendingMediaObjects:retMut];	
 		}
-		chatCon.composition = [chatCon.composition compositionByAppendingMediaObjects:retMut];	
+	}catch(NSException*e) {
 	}
+}
+
+static UIViewController *_topMostController(UIViewController *cont)
+{
+    UIViewController *topController = cont;
+    while (topController.presentedViewController) {
+        topController = topController.presentedViewController;
+    }
+    if ([topController isKindOfClass:[UINavigationController class]]) {
+        UIViewController *visible = ((UINavigationController *)topController).visibleViewController;
+        if (visible) {
+            topController = visible;
+        }
+    }
+    return (topController != cont ? topController : nil);
+}
+static UIViewController *topMostController()
+{
+    UIViewController *topController = [UIApplication sharedApplication].keyWindow.rootViewController;
+    UIViewController *next = nil;
+    while ((next = _topMostController(topController)) != nil) {
+        topController = next;
+    }
+    return topController;
 }
 
 @interface MImportDirBrowserController : UITableViewController <UITableViewDelegate, UIActionSheetDelegate, UITabBarDelegate, UITabBarControllerDelegate>
@@ -60,7 +105,7 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 {
 	dispatch_async(dispatch_get_main_queue(), ^(void){
 	if (!self.path) {
-		self.path = @"/var/mobile";
+		//self.path = @"/";
 	}
 	NSMutableArray* tempFiles = [NSMutableArray array];
 	
@@ -106,7 +151,26 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+	
+	if(!self.path) {
+		self.path = @"/";
+		if(NSString* lastPath = [[NSUserDefaults standardUserDefaults] stringForKey:@"messageFile-lastPath"]) {
+			NSString* current_pt = @"/";
+			for(NSString*path_now in [lastPath componentsSeparatedByString:@"/"]) {
+				if(path_now && [path_now length] > 0) {
+					MImportDirBrowserController *dbtvc1 = [[[MImportDirBrowserController alloc] init] initWithStyle:self.tableView.style];
+					current_pt = [current_pt stringByAppendingPathComponent:path_now];
+					dbtvc1.path = current_pt;
+					dbtvc1.chatCon = self.chatCon;
+					[self.navigationController pushViewController:dbtvc1 animated:NO];
+				}
+			}
+		}
+	}
+	
 	[self Refresh];
+	
+	
 }
 - (void)viewDidAppear:(BOOL)animated
 {
@@ -116,6 +180,8 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 	if (self.navigationController.navigationBar.backItem == NULL) {
 		self.navigationItem.leftBarButtonItem = kBTClose;
 	}
+	
+	
 }
 - (void)setRightButton
 {
@@ -143,24 +209,37 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 }
 - (void)showOptions
 {
-	UIActionSheet *popup = [[UIActionSheet alloc] initWithTitle:nil delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil otherButtonTitles:nil];
-	[popup setContext:@"more"];
+	UIAlertController* popup = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
 	
 	if(!self.editRow && ([self.files count]>0)) {
-		[popup addButtonWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Select" value:@"Select" table:nil]];
+		UIAlertAction *root = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Select" value:@"Select" table:nil] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			[self performSelector:@selector(selectRow) withObject:nil afterDelay:0];
+		}];
+		[popup addAction:root];
+	}
+	
+	if(self.editRow&& ([self.files count]>0)) {
+		UIAlertAction *root = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Select All" value:@"Select All" table:nil] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			[self performSelector:@selector(selectAllRow) withObject:nil afterDelay:0];
+		}];
+		[popup addAction:root];
 	}
 	
 	if(self.path && [self.path lastPathComponent]!=nil && [self.path lastPathComponent].length > 0) {
-		[popup addButtonWithTitle:@"Open subfolder"];
+		UIAlertAction *root = [UIAlertAction actionWithTitle:@"Open subfolder" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			@try {
+				MImportDirBrowserController *dbtvc = [[[MImportDirBrowserController alloc] init] initWithStyle:self.tableView.style];
+				dbtvc.path = [self.path stringByDeletingLastPathComponent];
+				[self.navigationController pushViewController:dbtvc animated:YES];
+			} @catch (NSException * e) {
+			}
+		}];
+		[popup addAction:root];
 	}
 	
-	[popup addButtonWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil]];
-	[popup setCancelButtonIndex:[popup numberOfButtons] - 1];
-	if (isDeviceIPad) {
-		[popup showFromBarButtonItem:[[self navigationItem] rightBarButtonItem] animated:YES];
-	} else {
-		[popup showInView:self.view];
-	}
+	UIAlertAction *cancel = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil] style:UIAlertActionStyleCancel handler:nil];
+	[popup addAction:cancel];
+	[topMostController() presentViewController:popup animated:YES completion:nil];
 }
 - (void)selectAllRow
 {
@@ -185,6 +264,8 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 	[self.tableView addSubview:refreshControl];
 	
 	self.tableView.allowsMultipleSelection = YES;
+	
+	
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
@@ -263,9 +344,14 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 }
 - (void)closeMImport
 {
+	[[NSUserDefaults standardUserDefaults] setObject:self.path forKey:@"messageFile-lastPath"];
+	[[NSUserDefaults standardUserDefaults] synchronize];
 	[self dismissViewControllerAnimated:YES completion:nil];
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.8f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-		[chatCon showKeyboardForReply];
+		@try {
+			[chatCon showKeyboardForReply];
+		}@catch(NSException* e) {
+		}
 	});
 }
 - (void)refreshView:(UIRefreshControl *)refresh
@@ -307,6 +393,9 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 	if(!kIconFolder) {
 		NSData* dataImage = [[NSData alloc] initWithBytes:dataFoldeIcon length:dataLenFoldeIcon];
 		kIconFolder = [[[UIImage alloc] initWithData:dataImage] copy];
+		if(kIconFolder && [kIconFolder respondsToSelector:@selector(imageWithRenderingMode:)]) {
+			kIconFolder = [[kIconFolder imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] copy];
+		}
 	}
 	BOOL isdir = [self fileIsDirectory:file];
 	//[[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isdir];
@@ -322,7 +411,11 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 	}
 	//cell.textLabel.text = file;
 	cell.textLabel.text =  file;
-	cell.textLabel.textColor = isLink&&isdir ? [UIColor blueColor] : [UIColor darkTextColor];
+	static UIColor* defaultColor;
+	if(!defaultColor) {
+		defaultColor = cell.textLabel.textColor;
+	}
+	cell.textLabel.textColor = isLink&&isdir ? [UIColor blueColor] : defaultColor;
 	cell.accessoryType = isdir ? UITableViewCellAccessoryDisclosureIndicator : [self.selectedRows containsObject:@(indexPath.row)]?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
 	cell.imageView.image = isdir ? kIconFolder : nil;
 	static __strong NSString* kKB = @"%.f KB";
@@ -363,64 +456,27 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 		} @catch (NSException * e) {
 		}
     } else {
-		UIActionSheet *popup = [[UIActionSheet alloc] initWithTitle:file delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil otherButtonTitles:nil];
-		[popup addButtonWithTitle:[[NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/PhotoLibrary.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"IMPORT" value:@"Import" table:@"PhotoLibrary"]];
-		[popup addButtonWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil]];
-		[popup setCancelButtonIndex:[popup numberOfButtons] - 1];
-		popup.tag = indexPath.row;
-		if (isDeviceIPad) {
-			[popup showFromBarButtonItem:[[self navigationItem] rightBarButtonItem] animated:YES];
-		} else {
-			[popup showInView:self.view];
-		}
+		UIAlertController* popup = [UIAlertController alertControllerWithTitle:file message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+		
+		UIAlertAction *root = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/PhotoLibrary.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"IMPORT" value:@"Import" table:@"PhotoLibrary"] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			[[UIPasteboard generalPasteboard] setData:[pathS dataUsingEncoding:NSUTF8StringEncoding] forPasteboardType:@"messageFile-file"];
+			while([[UIPasteboard generalPasteboard] dataForPasteboardType:@"messageFile-file"].length > 0) {
+				sleep(1/2);
+			}
+			appendMediaObjectsForFilesURL(chatCon, [@[[NSURL fileURLWithPath:[NSString stringWithFormat:@"/tmp/%@", [pathS lastPathComponent]]]] copy]);
+			[self closeMImport];
+			
+		}];
+		[popup addAction:root];
+		
+		UIAlertAction *cancel = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil] style:UIAlertActionStyleCancel handler:nil];
+		[popup addAction:cancel];
+		
+		[topMostController() presentViewController:popup animated:YES completion:nil];
 	}
 	return nil;
 }
-- (void)actionSheet:(UIActionSheet *)alert clickedButtonAtIndex:(NSInteger)button 
-{
-	if (button == [alert cancelButtonIndex]) {
-		return;
-	}
-	
-	NSString* contextAlert = [alert context];
-	NSString* buttonTitle = [[alert buttonTitleAtIndex:button] copy];
-	
-	if(contextAlert&&[contextAlert isEqualToString:@"more"]) {
-		
-		if ([buttonTitle isEqualToString:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Select" value:@"Select" table:nil]]) {
-			[self performSelector:@selector(selectRow) withObject:nil afterDelay:0];
-		} else if ([buttonTitle isEqualToString:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil]]) {
-			[self performSelector:@selector(cancelSelectRow) withObject:nil afterDelay:0];
-		} else if ([buttonTitle isEqualToString:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Select All" value:@"Select All" table:nil]]) {
-			[self performSelector:@selector(selectAllRow) withObject:nil afterDelay:0];
-		} else if ([buttonTitle isEqualToString:@"Open subfolder"]) {
-			@try {
-				MImportDirBrowserController *dbtvc = [[[MImportDirBrowserController alloc] init] initWithStyle:self.tableView.style];
-				dbtvc.path = [self.path stringByDeletingLastPathComponent];
-				[self.navigationController pushViewController:dbtvc animated:YES];
-			} @catch (NSException * e) {
-			}
-		}
-		return;
-	}
-	
-	NSString *file = [[self.files objectAtIndex:[alert tag]] copy];
-	NSString *pathS = [[self pathForFile:file] copy];
-	if([buttonTitle isEqualToString:[[NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/PhotoLibrary.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"IMPORT" value:@"Import" table:@"PhotoLibrary"]]) {
-		
-		[[UIPasteboard generalPasteboard] setData:[pathS dataUsingEncoding:NSUTF8StringEncoding] forPasteboardType:@"messageFile-file"];
-		
-		while([[UIPasteboard generalPasteboard] dataForPasteboardType:@"messageFile-file"].length > 0) {
-			sleep(1/2);
-		}
-		
-		appendMediaObjectsForFilesURL(chatCon, [@[[NSURL fileURLWithPath:[NSString stringWithFormat:@"/tmp/%@", [pathS lastPathComponent]]]] copy]);
-		[self closeMImport];
-		
-		return;
-	}
-	return;
-}
+
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation
 {
@@ -429,7 +485,7 @@ static void appendMediaObjectsForFilesURL(CKChatController* chatCon, NSArray* fi
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
 	if(section == [self numberOfSectionsInTableView:tableView]-1) {
-		return @"MessageFile © 2018";
+		return @"MessageFile © 2020";
 	}
 	return [super tableView:tableView titleForFooterInSection:section];
 }
@@ -441,38 +497,38 @@ static CKChatController* currCKChatController;
 - (void)photoButtonTapped:(id)arg1
 {
 	if(arg1) {
-		UIAlertView *alert = [[UIAlertView alloc] initWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Action" value:@"Action" table:nil] message:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/MessageUI.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"IMPORT_DOCUMENT" value:@"Add Media" table:@"Main"] delegate:self cancelButtonTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil] otherButtonTitles:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/MessageUI.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"INSERT_PHOTO_OR_VIDEO" value:@"Add Photo or Video" table:@"Main"], @"Root Filesystem", nil];
-		[alert show];
+		
+		UIAlertController* popup = [UIAlertController alertControllerWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Action" value:@"Action" table:nil] message:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/MessageUI.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"IMPORT_DOCUMENT" value:@"Add Media" table:@"Main"] preferredStyle:UIAlertControllerStyleActionSheet];
+		
+		UIAlertAction *photo = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/MessageUI.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"INSERT_PHOTO_OR_VIDEO" value:@"Add Photo or Video" table:@"Main"] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			[self photoButtonTapped:nil];
+		}];
+		[popup addAction:photo];
+		
+		UIAlertAction *root = [UIAlertAction actionWithTitle:@"Root Filesystem" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			MImportDirBrowserController *dbtvc = [[[MImportDirBrowserController alloc] init] initWithStyle:(UITableViewStyle)UITableViewCellStyleSubtitle];
+			//dbtvc.path = @"/";
+			dbtvc.chatCon = currCKChatController;
+			@try {
+				UINavigationController* nacV = [[UINavigationController alloc] initWithRootViewController:dbtvc];
+				[topMostController() presentViewController:nacV animated:YES completion:nil];
+			} @catch (NSException * e) {
+			}
+		}];
+		[popup addAction:root];
+		
+		UIAlertAction *cancel = [UIAlertAction actionWithTitle:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/UIKit.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"Cancel" value:@"Cancel" table:nil] style:UIAlertActionStyleCancel handler:nil];
+		[popup addAction:cancel];
+		
+		[topMostController() presentViewController:popup animated:YES completion:nil];
+			
 		return;
 	}
 	%orig;
 }
-%new
-- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
-{
-    if (buttonIndex == [alertView cancelButtonIndex]) {
-        return;
-    }
-	NSString* buttonTitle = [[alertView buttonTitleAtIndex:buttonIndex]?:@"" copy];
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-	if([buttonTitle isEqualToString:[[NSBundle bundleWithPath:@"/System/Library/Frameworks/MessageUI.framework"]?:[NSBundle mainBundle] localizedStringForKey:@"INSERT_PHOTO_OR_VIDEO" value:@"Add Photo or Video" table:@"Main"]]) {
-		[self photoButtonTapped:nil];
-	} else if([buttonTitle isEqualToString:@"Root Filesystem"]) {
-		MImportDirBrowserController *dbtvc = [[[MImportDirBrowserController alloc] init] initWithStyle:UITableViewCellStyleSubtitle];
-		dbtvc.path = @"/";
-		dbtvc.chatCon = currCKChatController;
-		@try {
-			UINavigationController* nacV = [[UINavigationController alloc] initWithRootViewController:dbtvc];
-			[currCKChatController presentViewController:nacV animated:YES completion:nil];
-		} @catch (NSException * e) {
-		}
-	}
-	});
-}
 %end
 
 %hook CKChatController
-%property(assign) id buttonFileAdd;
 - (void)viewDidAppear:(BOOL)arg1
 {
 	currCKChatController = self;
@@ -482,18 +538,6 @@ static CKChatController* currCKChatController;
 {
 	currCKChatController = self;
 	%orig;
-}
-%new
-- (void)buttonFileAddPressed
-{
-	MImportDirBrowserController *dbtvc = [[[MImportDirBrowserController alloc] init] initWithStyle:UITableViewCellStyleSubtitle];
-	dbtvc.path = @"/";
-	dbtvc.chatCon = self;
-	@try {
-		UINavigationController* nacV = [[UINavigationController alloc] initWithRootViewController:dbtvc];
-		[self presentViewController:nacV animated:YES completion:nil];
-	} @catch (NSException * e) {
-	}
 }
 %end
 
